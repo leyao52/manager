@@ -231,7 +231,14 @@ class InstanceStatDaily(models.Model):
             models.UniqueConstraint(
                 fields=["stat_date", "department", "cluster"],
                 name="uniq_daily_stat_dept_cluster",
-            )
+            ),
+            # 上面的约束管不住汇总行：SQL 里 NULL 互不相等，cluster 为空的行不受其约束，
+            # 所以为部门汇总行单独加一条部分唯一索引。
+            models.UniqueConstraint(
+                fields=["stat_date", "department"],
+                condition=models.Q(cluster__isnull=True),
+                name="uniq_daily_stat_dept_summary",
+            ),
         ]
 
     def __str__(self) -> str:

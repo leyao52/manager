@@ -3,6 +3,7 @@ import socket
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -333,6 +334,19 @@ class InstanceStatsTests(TestCase):
                 ).values_list("instance_count", flat=True)
             )
             self.assertEqual(summary.instance_count, cluster_sum)
+
+    def test_department_summary_row_is_protected_by_db_constraint(self):
+        """部门汇总行由部分唯一索引兜底：cluster 为空时数据库层同样拒绝重复。"""
+        services.collect_instance_stats()
+        summary = InstanceStatDaily.objects.get(department=self.department_a, cluster=None)
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            InstanceStatDaily.objects.create(
+                stat_date=summary.stat_date,
+                department=self.department_a,
+                cluster=None,
+                instance_count=99,
+            )
 
     def test_collect_stats_with_explicit_date(self):
         result = services.collect_instance_stats("2026-01-01")
