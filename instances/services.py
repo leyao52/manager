@@ -147,7 +147,7 @@ def rotate_passwords(instance_ids=None, force: bool = False, now: datetime = Non
     """批量轮换密码。默认只轮换已到期（超过轮换周期）的凭据。
 
     :param instance_ids: 仅轮换这些实例，None 表示全部
-    :param force: True 表示忽略轮换周期，强制轮换
+    :param force: True 表示忽略轮换周期与 auto_rotate_enabled 开关，强制轮换
     """
     queryset = InstanceCredential.objects.select_related("instance").order_by("id")
     if instance_ids:

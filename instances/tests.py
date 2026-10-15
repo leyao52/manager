@@ -219,6 +219,28 @@ class PasswordRotationTests(TestCase):
         self.assertEqual(result["success"], 1)
         self.assertEqual(result["skipped"], 0)
 
+    def test_auto_rotate_disabled_is_skipped_by_scheduled_rotation(self):
+        """关闭自动轮换的凭据不参与定时轮换，但仍可手动 / 强制轮换。"""
+        services.rotate_credential(self.credential)
+        self.credential.refresh_from_db()
+        self.credential.auto_rotate_enabled = False
+        self.credential.rotate_interval_hours = 0  # 周期 0 本应立即到期
+        self.credential.save(update_fields=["auto_rotate_enabled", "rotate_interval_hours"])
+
+        # 开关关闭时恒不到期
+        self.assertFalse(self.credential.is_rotation_due())
+        result = services.rotate_passwords()
+        self.assertEqual(result["success"], 0)
+        self.assertEqual(result["skipped"], 1)
+
+        # force=True 可越过开关
+        forced = services.rotate_passwords(force=True)
+        self.assertEqual(forced["success"], 1)
+
+        # 手动轮换接口同样不受开关限制
+        log = services.rotate_credential(self.credential)
+        self.assertTrue(log.success)
+
     def test_rotate_passwords_skips_credential_not_due(self):
         services.rotate_credential(self.credential)
         result = services.rotate_passwords()

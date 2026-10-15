@@ -152,6 +152,7 @@ class InstanceCredentialSerializer(serializers.ModelSerializer):
             "password_version",
             "rotated_at",
             "rotate_interval_hours",
+            "auto_rotate_enabled",
             "rotation_due",
             "created_at",
             "updated_at",

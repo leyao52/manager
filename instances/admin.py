@@ -43,7 +43,15 @@ class InstanceAdmin(admin.ModelAdmin):
 
 @admin.register(InstanceCredential)
 class InstanceCredentialAdmin(admin.ModelAdmin):
-    list_display = ("instance", "username", "password_version", "rotated_at", "rotate_interval_hours")
+    list_display = (
+        "instance",
+        "username",
+        "password_version",
+        "rotated_at",
+        "rotate_interval_hours",
+        "auto_rotate_enabled",
+    )
+    list_filter = ("auto_rotate_enabled",)
     search_fields = ("username", "instance__name", "instance__host")
     readonly_fields = ("password_ciphertext", "password_version", "rotated_at", "created_at", "updated_at")
 

@@ -128,6 +128,8 @@ class InstanceCredential(TimeStampedModel):
     password_version = models.PositiveIntegerField(default=1)
     rotated_at = models.DateTimeField(null=True, blank=True)
     rotate_interval_hours = models.PositiveIntegerField(default=12)
+    # 自动轮换开关：关闭后定时任务不再轮换该凭据，手动轮换接口不受影响
+    auto_rotate_enabled = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["id"]
@@ -155,7 +157,13 @@ class InstanceCredential(TimeStampedModel):
 
     # -- 轮换周期 ---------------------------------------------------------
     def is_rotation_due(self, now=None) -> bool:
-        """从未轮换过，或已超过 rotate_interval_hours 未轮换，则需要轮换。"""
+        """从未轮换过，或已超过 rotate_interval_hours 未轮换，则需要轮换。
+
+        关闭 auto_rotate_enabled 的凭据不参与自动轮换，恒返回 False；
+        手动调用轮换接口（rotate_credential）不受该开关限制。
+        """
+        if not self.auto_rotate_enabled:
+            return False
         if self.rotated_at is None:
             return True
         now = now or timezone.now()
