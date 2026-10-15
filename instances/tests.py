@@ -204,6 +204,21 @@ class PasswordRotationTests(TestCase):
         self.credential.save(update_fields=["rotated_at"])
         self.assertTrue(self.credential.is_rotation_due())
 
+    def test_rotation_interval_zero_is_due_immediately(self):
+        """周期 0 是合法值（立即到期），不能被当成未设置而回退到默认 12 小时。"""
+        services.rotate_credential(self.credential)
+        self.credential.refresh_from_db()
+        self.assertFalse(self.credential.is_rotation_due())
+
+        self.credential.rotate_interval_hours = 0
+        self.credential.save(update_fields=["rotate_interval_hours"])
+
+        # 刚刚轮换过，按默认 12 小时周期本不该到期；周期为 0 时应立即到期
+        self.assertTrue(self.credential.is_rotation_due())
+        result = services.rotate_passwords()
+        self.assertEqual(result["success"], 1)
+        self.assertEqual(result["skipped"], 0)
+
     def test_rotate_passwords_skips_credential_not_due(self):
         services.rotate_credential(self.credential)
         result = services.rotate_passwords()

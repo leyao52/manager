@@ -159,7 +159,13 @@ class InstanceCredential(TimeStampedModel):
         if self.rotated_at is None:
             return True
         now = now or timezone.now()
-        interval = self.rotate_interval_hours or settings.CREDENTIAL_ROTATE_INTERVAL_HOURS
+        # 用 is None 判断而非 or：0 是合法周期（表示立即到期），
+        # 若写成 `self.rotate_interval_hours or 默认值`，0 会被误当成未设置而回退到默认周期。
+        interval = (
+            self.rotate_interval_hours
+            if self.rotate_interval_hours is not None
+            else settings.CREDENTIAL_ROTATE_INTERVAL_HOURS
+        )
         return self.rotated_at + timedelta(hours=interval) <= now
 
 
