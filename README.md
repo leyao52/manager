@@ -53,7 +53,7 @@ database-instance-manager/
 | `Instance` | 数据库实例 | name、cluster、host、port、role、status、last_probe_at、last_probe_ok；(cluster, host, port) 唯一 |
 | `InstanceCredential` | 实例账号密码（密码仅存密文） | instance(1:1)、username、password_ciphertext、password_version、rotated_at、rotate_interval_hours、auto_rotate_enabled |
 | `CredentialRotationLog` | 密码轮换审计，新旧密码均以密文留存 | credential、instance、old/new_password_ciphertext、success、message |
-| `InstanceStatDaily` | 每日统计快照，(stat_date, department, cluster) 唯一 | instance_count、online_count、offline_count |
+| `InstanceStatDaily` | 每日统计快照，(stat_date, department, cluster) 唯一；**cluster 为空的行是部门级汇总行**（该部门下所有集群合计） | instance_count、online_count、offline_count |
 
 ## 快速开始
 

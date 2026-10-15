@@ -293,7 +293,9 @@ class InstanceStatsTests(TestCase):
 
     def test_collect_stats_by_department_and_cluster(self):
         result = services.collect_instance_stats()
-        self.assertEqual(result["rows"], 3)
+        self.assertEqual(result["cluster_rows"], 3)
+        self.assertEqual(result["department_rows"], 2)
+        self.assertEqual(result["rows"], 5)
         self.assertEqual(result["instance_total"], 3)
 
         row = InstanceStatDaily.objects.get(cluster=self.cluster_a1)
@@ -308,7 +310,29 @@ class InstanceStatsTests(TestCase):
     def test_collect_stats_is_idempotent(self):
         services.collect_instance_stats()
         services.collect_instance_stats()
-        self.assertEqual(InstanceStatDaily.objects.count(), 3)
+        # 3 个集群行 + 2 个部门汇总行
+        self.assertEqual(InstanceStatDaily.objects.count(), 5)
+        self.assertEqual(InstanceStatDaily.objects.filter(cluster=None).count(), 2)
+
+    def test_collect_stats_writes_department_summary_rows(self):
+        """部门级汇总行（cluster 为空）等于该部门下所有集群行之和。"""
+        services.collect_instance_stats()
+
+        row_a = InstanceStatDaily.objects.get(department=self.department_a, cluster=None)
+        self.assertEqual(
+            (row_a.instance_count, row_a.online_count, row_a.offline_count), (2, 1, 1)
+        )
+        row_b = InstanceStatDaily.objects.get(department=self.department_b, cluster=None)
+        self.assertEqual(row_b.instance_count, 1)
+
+        for department in (self.department_a, self.department_b):
+            summary = InstanceStatDaily.objects.get(department=department, cluster=None)
+            cluster_sum = sum(
+                InstanceStatDaily.objects.filter(
+                    department=department, cluster__isnull=False
+                ).values_list("instance_count", flat=True)
+            )
+            self.assertEqual(summary.instance_count, cluster_sum)
 
     def test_collect_stats_with_explicit_date(self):
         result = services.collect_instance_stats("2026-01-01")
@@ -321,7 +345,8 @@ class InstanceStatsTests(TestCase):
 
     def test_collect_daily_stats_task(self):
         result = collect_daily_instance_stats.run()
-        self.assertEqual(result["rows"], 3)
+        self.assertEqual(result["cluster_rows"], 3)
+        self.assertEqual(result["department_rows"], 2)
         self.assertEqual(result["stat_date"], timezone.localdate().isoformat())
 
 
@@ -599,15 +624,24 @@ class ApiTests(LocalTcpServerMixin, TestCase):
     def test_daily_stats_collect_and_list(self):
         collected = self.client.post("/api/daily-stats/collect/", {}, format="json")
         self.assertEqual(collected.status_code, 201, collected.data)
-        self.assertEqual(collected.data["rows"], 1)
+        self.assertEqual(collected.data["cluster_rows"], 1)
+        self.assertEqual(collected.data["department_rows"], 1)
 
         listing = self.client.get("/api/daily-stats/")
         self.assertEqual(listing.status_code, 200)
-        self.assertEqual(listing.data["count"], 1)
+        # 1 个集群行 + 1 个部门汇总行
+        self.assertEqual(listing.data["count"], 2)
         self.assertEqual(listing.data["results"][0]["instance_count"], 1)
 
+        # 部门汇总行的集群字段应返回 null，而不是整块字段从响应里消失
+        summary = [r for r in listing.data["results"] if r["cluster"] is None]
+        self.assertEqual(len(summary), 1)
+        self.assertIsNone(summary[0]["cluster_name"])
+        self.assertIsNone(summary[0]["cluster_code"])
+        self.assertEqual(summary[0]["department_name"], self.department.name)
+
         filtered = self.client.get("/api/daily-stats/", {"department": self.department.id})
-        self.assertEqual(filtered.data["count"], 1)
+        self.assertEqual(filtered.data["count"], 2)
 
         bad_date = self.client.get("/api/daily-stats/", {"stat_date": "2026/01/01"})
         self.assertEqual(bad_date.status_code, 400)

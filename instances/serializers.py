@@ -193,8 +193,16 @@ class CredentialRotationLogSerializer(serializers.ModelSerializer):
 class InstanceStatDailySerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source="department.name", read_only=True)
     department_code = serializers.CharField(source="department.code", read_only=True)
-    cluster_name = serializers.CharField(source="cluster.name", read_only=True)
-    cluster_code = serializers.CharField(source="cluster.code", read_only=True)
+    # 部门级汇总行不含集群，必须显式返回 None：
+    # CharField(source="cluster.name") 在 cluster 为空时会把整个字段跳过，导致响应里字段消失。
+    cluster_name = serializers.SerializerMethodField()
+    cluster_code = serializers.SerializerMethodField()
+
+    def get_cluster_name(self, obj) -> str:
+        return obj.cluster.name if obj.cluster_id else None
+
+    def get_cluster_code(self, obj) -> str:
+        return obj.cluster.code if obj.cluster_id else None
 
     class Meta:
         model = InstanceStatDaily

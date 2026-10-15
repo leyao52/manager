@@ -206,13 +206,19 @@ class CredentialRotationLog(models.Model):
 
 
 class InstanceStatDaily(models.Model):
-    """按 日期 + 部门 + 集群 维度聚合的实例数量快照。"""
+    """按 日期 + 部门 + 集群 维度聚合的实例数量快照。
+
+    cluster 为 NULL 的行是部门级汇总行，数值等于该部门下所有集群行之和。
+    """
 
     stat_date = models.DateField()
     department = models.ForeignKey(
         Department, on_delete=models.CASCADE, related_name="daily_stats"
     )
-    cluster = models.ForeignKey(Cluster, on_delete=models.CASCADE, related_name="daily_stats")
+    # cluster 为空表示该行是「部门级汇总行」，即该部门下所有集群的合计
+    cluster = models.ForeignKey(
+        Cluster, null=True, blank=True, on_delete=models.CASCADE, related_name="daily_stats"
+    )
     instance_count = models.PositiveIntegerField(default=0)
     online_count = models.PositiveIntegerField(default=0)
     offline_count = models.PositiveIntegerField(default=0)
@@ -229,4 +235,5 @@ class InstanceStatDaily(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.stat_date} {self.department.code}/{self.cluster.code}: {self.instance_count}"
+        scope = self.cluster.code if self.cluster_id else "部门汇总"
+        return f"{self.stat_date} {self.department.code}/{scope}: {self.instance_count}"

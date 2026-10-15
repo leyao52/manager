@@ -15,6 +15,7 @@ from django.utils import timezone
 from .models import (
     Cluster,
     CredentialRotationLog,
+    Department,
     Instance,
     InstanceCredential,
     InstanceStatDaily,
@@ -199,10 +200,14 @@ def _normalize_stat_date(value) -> date:
 
 
 def collect_instance_stats(stat_date=None) -> dict:
-    """按 部门 + 集群 维度统计实例数量，并写入 InstanceStatDaily（幂等，可重复执行）。"""
+    """按 部门 + 集群 维度统计实例数量，并写入 InstanceStatDaily（幂等，可重复执行）。
+
+    每个集群一行；每个部门额外写一行 cluster 为空的汇总行（该部门下所有集群合计）。
+    """
     stat_date = _normalize_stat_date(stat_date)
 
     clusters = list(Cluster.objects.values("id", "department_id").order_by("id"))
+    departments = list(Department.objects.values("id").order_by("id"))
     # 注意：必须显式 order_by() 清除模型 Meta.ordering，否则排序字段会进入 GROUP BY，
     # 导致按 cluster_id 分组统计数量时结果错误（Django 官方文档中的经典陷阱）。
     total_map = dict(
@@ -221,26 +226,58 @@ def collect_instance_stats(stat_date=None) -> dict:
         .order_by()
     )
 
-    rows = 0
+    cluster_rows = 0
+    # 部门汇总桶：先按全部部门建 0 值桶，保证没有集群的部门也能落一行
+    dept_totals = {d["id"]: [0, 0, 0] for d in departments}
     with transaction.atomic():
         for cluster in clusters:
             cluster_id = cluster["id"]
             instance_count = total_map.get(cluster_id, 0)
+            online_count = online_map.get(cluster_id, 0)
+            offline_count = offline_map.get(cluster_id, 0)
             InstanceStatDaily.objects.update_or_create(
                 stat_date=stat_date,
                 department_id=cluster["department_id"],
                 cluster_id=cluster_id,
                 defaults={
                     "instance_count": instance_count,
-                    "online_count": online_map.get(cluster_id, 0),
-                    "offline_count": offline_map.get(cluster_id, 0),
+                    "online_count": online_count,
+                    "offline_count": offline_count,
                 },
             )
-            rows += 1
+            cluster_rows += 1
+            # 同一趟循环里累加，保证部门汇总行恒等于其下集群行之和
+            bucket = dept_totals.get(cluster["department_id"])
+            if bucket is not None:
+                bucket[0] += instance_count
+                bucket[1] += online_count
+                bucket[2] += offline_count
 
-    logger.info("实例统计落库完成：date=%s，部门/集群维度共 %s 行", stat_date, rows)
+        department_rows = 0
+        for department_id, (total, online, offline) in dept_totals.items():
+            # cluster=None 即部门级汇总行
+            InstanceStatDaily.objects.update_or_create(
+                stat_date=stat_date,
+                department_id=department_id,
+                cluster=None,
+                defaults={
+                    "instance_count": total,
+                    "online_count": online,
+                    "offline_count": offline,
+                },
+            )
+            department_rows += 1
+
+    logger.info(
+        "实例统计落库完成：date=%s，集群维度 %s 行 + 部门汇总 %s 行",
+        stat_date,
+        cluster_rows,
+        department_rows,
+    )
     return {
         "stat_date": stat_date.isoformat(),
-        "rows": rows,
+        "rows": cluster_rows + department_rows,
+        "cluster_rows": cluster_rows,
+        "department_rows": department_rows,
         "instance_total": sum(total_map.values()),
     }
